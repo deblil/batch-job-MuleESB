@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<file:config name="File_Config" doc:name="File Config" doc:id="85664eab-8b94-4c4f-bf33-752d9ee3ea6b" >
+		<file:connection workingDir="C:\Users\Deblil\MuleSoft\batch-job\input" />
+	</file:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="24636eda-9d95-40f7-bb34-efd8d0a34f25" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Semina428#" database="mulesoft" />
+	</db:config>
+	<flow name="batch-jobFlow" doc:id="1f0a459b-77b0-48b6-838c-4e54f507b551" >
+		<file:listener doc:name="On New or Updated File" doc:id="e87e1057-f57b-437a-9fe8-10000acf9402" config-ref="File_Config" autoDelete="true" moveToDirectory="C:\Users\Deblil\MuleSoft\batch-job\backup">
+			<scheduling-strategy >
+				<fixed-frequency frequency="10" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+			<file:matcher filenamePattern="*.csv" />
+		</file:listener>
+		<ee:transform doc:name="to JSON" doc:id="3f6d1875-9627-45d5-a6e3-f47c82aa902a" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[now()]" doc:name="start time" doc:id="e1c961cf-20ad-4382-b1bd-707f87acc098" variableName="start_time"/>
+		<batch:job jobName="batch-jobBatch_Job" doc:id="cbe9e67e-6cb4-427d-a627-c181653e8cd3" >
+			<batch:process-records >
+				<batch:step name="priceGT400" doc:id="a17ae167-5bd4-499d-82f4-841c93b925db" acceptExpression="payload.price &gt; 400">
+					<ee:transform doc:name="10% discount" doc:id="54e2690d-b4cd-42bf-9e97-ab034a3d803d" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+"productID": payload.productID,
+"carat": payload.carat,
+"cut": payload.cut,
+"color": payload.color,
+"clarity": payload.clarity,
+"depth": payload.depth,
+"table": payload.table,
+"price_old": payload.price as Number,
+"price_new": (payload.price as Number) * 0.9,
+"x": payload.x,
+"y": payload.y,
+"z": payload.z
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="23bfd9f8-1014-44ab-a423-3451f84f8515" streaming="true">
+						<db:bulk-insert doc:name="MySQL" doc:id="4062c69b-452c-49bb-83b7-985ebb3d73ef" config-ref="Database_Config">
+							<db:sql ><![CDATA[INSERT INTO diamonds_discount (productID, carat, cut, color, clarity, depth, `table`, price_old, price_new, x, y, z)
+VALUES (:productID, :carat, :cut, :color, :clarity, :depth, :table, :price_old, :price_new, :x, :y, z); ]]></db:sql>
+						</db:bulk-insert>
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="time taken" doc:id="dc3ba566-ab98-4fa3-b344-fb10ce06f930" message="The time taken is #[now() - vars.start_time as String]"/>
+			</batch:on-complete>
+		</batch:job>
+	</flow>
+</mule>
